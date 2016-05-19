@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -60,27 +61,19 @@ func Put(session *ssh.Session, localFile string, remoteDir string) error {
 
 func Get(session *ssh.Session, remoteFile string, localDir string) error {
 
-	//TODO
-	//var storeFile string
+	var storePath string
+	ldir, lfile := path.Split(localDir)
+	_, err := os.Stat(ldir)
+	if err != nil {
+		return fmt.Errorf("local %s %s", ldir, err)
+	}
+	if len(lfile) > 0 {
+		storePath = localDir
+	} else {
+		_, rfile := path.Split(remoteFile)
+		storePath = fmt.Sprintf("%s/%s", ldir, rfile)
+	}
 
-	//_, rfile := path.Split(remoteFile)
-	//if len(rfile) > 0 {
-	//	storeFile = fmt.Sprintf("%s/%s", localDir, rfile)
-	//	fmt.Println(storeFile)
-	//}
-
-	//stat, err := os.Stat(localDir)
-	//if err != nil {
-	//	storeFile = localDir
-	//} else {
-	//	if stat.IsDir() {
-	//		storeFile = localDir
-	//	} else {
-	//		storeFile = localDir
-	//	}
-	//}
-
-	defer session.Close()
 	go func() {
 		w, _ := session.StdinPipe()
 		defer w.Close()
@@ -113,7 +106,7 @@ func Get(session *ssh.Session, remoteFile string, localDir string) error {
 
 				rsize, _ := strconv.Atoi(fSize)
 				err := dataRecv(r, rsize)
-				fmt.Printf("TODO: save file[%s] mode[%s]\n", fName, fMode)
+				fmt.Printf("TODO: save file[%s]=>[%s] mode[%s]\n", fName, storePath, fMode)
 				fmt.Printf("TODO: set mtime[%s],atime[%s]\n", mtime, atime)
 				if err != nil {
 					fmt.Println(err)
