@@ -2,7 +2,7 @@ package scp
 
 import ()
 
-func argParse(arg string) (FilePath, error) {
+func ArgParse(arg string) (*FilePath, error) {
 
 	path := &FilePath{Remote: false}
 
@@ -31,5 +31,5 @@ func argParse(arg string) (FilePath, error) {
 		path.Path = arg[len(path.User)+len(path.Host)+2:]
 	}
 
-	return *path, nil
+	return path, nil
 }
