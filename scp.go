@@ -18,6 +18,51 @@ type Config struct {
 	Session *ssh.Session
 }
 
+type storeConfig struct {
+	Path  string
+	Perm  os.FileMode
+	size  int
+	mtime time.Time
+	atime time.Time
+}
+
+func (s *storeConfig) dataRecv(r io.Reader) error {
+
+	w, err := os.Create(s.Path)
+	if err != nil {
+		return fmt.Errorf("%s", err)
+	}
+
+	readSize := 0
+	remainSize := s.size
+	bufSize := 1024 * 256
+	rbuf := make([]byte, bufSize)
+
+	for {
+		n, err := r.Read(rbuf)
+		if err != nil {
+			return fmt.Errorf("%s", err)
+		}
+		readSize += n
+		remainSize -= n
+		//fmt.Printf("%v/%v %v\n", readSize, dataSize, remainSize)
+		w.Write(rbuf)
+		if remainSize <= 0 {
+			fmt.Println("recv complate")
+			err := w.Chmod(s.Perm)
+			if err != nil {
+				fmt.Println(err)
+			}
+			w.Close()
+			os.Chtimes(s.Path, s.atime, s.mtime)
+			return nil
+		}
+		if remainSize < bufSize {
+			rbuf = make([]byte, remainSize)
+		}
+	}
+}
+
 func Put(session *ssh.Session, localFile string, remoteDir string) error {
 
 	baseDir := "./"
@@ -61,17 +106,18 @@ func Put(session *ssh.Session, localFile string, remoteDir string) error {
 
 func Get(session *ssh.Session, remoteFile string, localDir string) error {
 
-	var storePath string
+	store := &storeConfig{}
+
 	ldir, lfile := path.Split(localDir)
 	_, err := os.Stat(ldir)
 	if err != nil {
 		return fmt.Errorf("local %s %s", ldir, err)
 	}
 	if len(lfile) > 0 {
-		storePath = localDir
+		store.Path = localDir
 	} else {
 		_, rfile := path.Split(remoteFile)
-		storePath = fmt.Sprintf("%s/%s", ldir, rfile)
+		store.Path = fmt.Sprintf("%s/%s", ldir, rfile)
 	}
 
 	go func() {
@@ -82,8 +128,6 @@ func Get(session *ssh.Session, remoteFile string, localDir string) error {
 
 		fmt.Fprint(w, "\x00")
 
-		var mtime time.Time
-		var atime time.Time
 		for {
 			b, _ := rdr.Peek(1)
 			//fmt.Println(string(b))
@@ -92,22 +136,23 @@ func Get(session *ssh.Session, remoteFile string, localDir string) error {
 				//TODO
 				buf, _ := rdr.ReadBytes('\n')
 				fields := strings.Fields(string(buf))
-				mtime = unixStringToTime(fields[0][1:])
-				atime = unixStringToTime(fields[2])
+				store.mtime = unixStringToTime(fields[0][1:])
+				store.atime = unixStringToTime(fields[2])
 				fmt.Fprint(w, "\x00")
 			case string(b) == "C": //Cmmmm <length> <filename>
 				buf, _ := rdr.ReadBytes('\n')
 				line := strings.TrimRight(string(buf), "\n")
 				fields := strings.Fields(line)
-				fMode := fields[0][1:]
-				fSize := fields[1]
-				fName := fields[2]
+				//fMode := fields[0][1:]
+				//fSize := fields[1]
+				//fName := fields[2]
+				fmode, _ := strconv.ParseUint(fields[0][1:], 10, 32)
+				store.Perm = os.FileMode(fmode)
+				store.size, _ = strconv.Atoi(fields[1])
 				fmt.Fprint(w, "\x00")
 
-				rsize, _ := strconv.Atoi(fSize)
-				err := dataRecv(r, rsize)
-				fmt.Printf("TODO: save file[%s]=>[%s] mode[%s]\n", fName, storePath, fMode)
-				fmt.Printf("TODO: set mtime[%s],atime[%s]\n", mtime, atime)
+				err := store.dataRecv(r)
+				//err := dataRecv(r, store.size)
 				if err != nil {
 					fmt.Println(err)
 				}
